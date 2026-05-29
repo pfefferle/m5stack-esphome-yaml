@@ -1,0 +1,159 @@
+# Board: M5Stack CoreS3 (M5Stack)
+# Definition: definitions/boards/m5stack-cores3/manifest.yaml
+
+esphome:
+  name: unit-scroll
+  friendly_name: Unit Scroll
+
+esp32:
+  board: m5stack-cores3
+  framework:
+    type: arduino
+
+logger:
+  level: DEBUG
+
+api:
+  encryption:
+    key: "gzefCrXoRGPnL7PdUoznHV7enHW5iSPuRmx5vZ8EJuY=" # example key, you are supposed to generate a new one
+
+ota:
+  - platform: esphome
+    password: "11a02f385a1f39ef18d424ef884c85a5" # example passwd, you are supposed to generate a new one
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  ap:
+    ssid: "Unit Scroll Fallback Hotspot"
+    password: "vnVdFdBdrZza"
+
+captive_portal:
+
+# Load the custom Unit Scroll component from this repository.
+external_components:
+  - source: github://m5stack/esphome-yaml/components
+    components: unit_scroll
+    refresh: 0s
+
+## Grove I2C port on M5Stack CoreS3.
+i2c:
+  - id: grove_i2c
+    sda: GPIO2
+    scl: GPIO1
+    scan: true
+
+# Unit Scroll device and initial RGB LED color.
+unit_scroll:
+  id: my_scroll
+  i2c_id: grove_i2c
+  address: 0x40
+  direction: true # false = clockwise increases value, true = counterclockwise increases value
+  rgb_red: 0
+  rgb_green: 255
+  rgb_blue: 0
+
+globals:
+  - id: scroll_led_enabled
+    type: bool
+    restore_value: false
+    initial_value: 'true'
+
+# Poll the encoder and button, then update the RGB LED color.
+interval:
+  - interval: 100ms
+    then:
+      - lambda: |-
+          static bool last_button = false;
+          static uint16_t last_value = 0;
+          static bool has_last_value = false;
+
+          bool button = id(my_scroll).get_button_state();
+          bool led_toggled = false;
+          if (button && !last_button) {
+            id(scroll_led_enabled) = !id(scroll_led_enabled);
+            led_toggled = true;
+            if (!id(scroll_led_enabled)) {
+              auto call = id(scroll_rgb_led).turn_off();
+              call.perform();
+            }
+            ESP_LOGI("unit_scroll_demo", "RGB LED is now %s", id(scroll_led_enabled) ? "ON" : "OFF");
+          }
+          last_button = button;
+
+          uint16_t value = id(my_scroll).get_value();
+          id(scroll_encoder_value).publish_state(value);
+          bool value_changed = !has_last_value || value != last_value;
+
+          // Map the encoder value to a simple RGB color wheel.
+          uint8_t position = static_cast<uint8_t>(value & 0xFF);
+          uint8_t region = position / 43;
+          uint8_t remainder = (position - (region * 43)) * 6;
+          uint8_t p = 0;
+          uint8_t q = 255 - remainder;
+          uint8_t t = remainder;
+          uint8_t r = 0;
+          uint8_t g = 0;
+          uint8_t b = 0;
+
+          switch (region) {
+            case 0: r = 255; g = t; b = p; break;
+            case 1: r = q; g = 255; b = p; break;
+            case 2: r = p; g = 255; b = t; break;
+            case 3: r = p; g = q; b = 255; break;
+            case 4: r = t; g = p; b = 255; break;
+            default: r = 255; g = p; b = q; break;
+          }
+
+          if (id(scroll_led_enabled) && (value_changed || led_toggled)) {
+            auto call = id(scroll_rgb_led).turn_on();
+            call.set_rgb(r / 255.0f, g / 255.0f, b / 255.0f);
+            call.perform();
+          }
+
+          if (value_changed) {
+            ESP_LOGD("unit_scroll_demo", "Encoder %u -> RGB(%u, %u, %u), RGB LED %s", value, r, g, b,
+                     id(scroll_led_enabled) ? "on" : "off");
+            last_value = value;
+            has_last_value = true;
+          }
+
+sensor:
+  - platform: template
+    id: scroll_encoder_value
+    name: "Encoder Value"
+    icon: mdi:rotate-right
+    accuracy_decimals: 0
+    update_interval: never
+
+# Expose each RGB channel as an output for the RGB light platform.
+output:
+  - platform: unit_scroll
+    id: scroll_rgb_red_output
+    unit_scroll_id: my_scroll
+    channel: rgb_red
+
+  - platform: unit_scroll
+    id: scroll_rgb_green_output
+    unit_scroll_id: my_scroll
+    channel: rgb_green
+
+  - platform: unit_scroll
+    id: scroll_rgb_blue_output
+    unit_scroll_id: my_scroll
+    channel: rgb_blue
+
+# Combine the three outputs into one RGB light entity.
+light:
+  - platform: rgb
+    id: scroll_rgb_led
+    name: "RGB LED"
+    red: scroll_rgb_red_output
+    green: scroll_rgb_green_output
+    blue: scroll_rgb_blue_output
+    restore_mode: ALWAYS_OFF
+    default_transition_length: 0s
+
+
+
