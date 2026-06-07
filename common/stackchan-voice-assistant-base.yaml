@@ -519,7 +519,7 @@ i2s_audio_duplex:
   sample_rate: 48000
   output_sample_rate: 16000     # FIR decimation to 16kHz
   correct_dc_offset: true
-  aec_id: aec
+  processor_id: aec
   buffers_in_psram: true
 
 microphone:
