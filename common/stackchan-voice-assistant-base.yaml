@@ -537,6 +537,10 @@ speaker:
     id: hw_speaker
     i2s_audio_duplex_id: i2s_duplex
     sample_rate: 48000
+    # The duplex speaker only declares stream limits, not a concrete
+    # bits_per_sample. ESPHome 2026.5+ mixer inherits this from its
+    # output_speaker, so it must be set explicitly or validation fails.
+    bits_per_sample: 16
 
   - platform: mixer
     id: audio_mixer
